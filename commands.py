@@ -1,20 +1,28 @@
-from telebot import TeleBot
-from telebot.types import BotCommand
-import os
-from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Load environment variables
-load_dotenv()
+# Reemplaza este token por el tuyo
+TOKEN = "8025298642:AAFBcj1aMXJI6Rw6lmgZ40tfX3lFx2g86bw"
 
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-bot = TeleBot(TOKEN)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🎉 ¡Bienvenido a Psique Oculta!\n"
+        "🎉 Estamos emocionados de que te unas a nuestra comunidad. Este es un espacio para explorar, compartir y aprender sobre los misterios de la mente, el subconsciente y todo lo relacionado con el mundo oculto. 🌙✨\n\n"
+        "👁️‍🗨️ Como agradecimiento por unirte, te estamos regalando un e-book exclusivo completamente gratis. 🎁\n"
+        "Haz clic en el enlace de abajo para descargar tu regalo y comenzar tu viaje hacia lo desconocido.\n\n"
+        "🔮 ¡Que tu viaje sea enriquecedor y lleno de descubrimientos! Si tienes alguna pregunta o quieres compartir algo interesante, no dudes en interactuar. ¡Nos encantaría saber tu opinión! "
+    )
 
-def register_commands(bot: TeleBot):
-    commands = [
-        BotCommand("start", "Start the bot"),
-        BotCommand("hello", "Hello"),
-    ]
-    
-    bot.set_my_commands(commands)
+def main():
+    # Crea una aplicación y pasa el token
+    application = Application.builder().token(TOKEN).build()
 
-register_commands(bot)
+    # Añade el manejador para el comando /start
+    start_handler = CommandHandler("start", start)
+    application.add_handler(start_handler)
+
+    # Comienza a escuchar por mensajes
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
