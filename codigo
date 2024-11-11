@@ -1,0 +1,44 @@
+from telebot import TeleBot
+from telebot.types import BotCommand, Message
+import os
+from dotenv import load_dotenv
+
+# Token de Telegram directamente en el código
+TOKEN = "8025298642:AAFBcj1aMXJI6Rw6lmgZ40tfX3lFx2g86bw"
+bot = TeleBot(TOKEN)
+
+# Mensaje de bienvenida
+welcome_message = """
+🎉 Welcome to Psique Oculta!
+We’re excited to have you join our community. This is a space to explore, share, and learn about the mysteries of the mind, the subconscious, and everything related to the world of the occult. 🌙✨
+
+👁️‍🗨️ As a thank you for joining, we’re giving you an exclusive e-book completely free. 🎁
+Click the link below to download your gift and begin your journey into the unknown.
+
+🔮 May your journey be enriching and full of discoveries! If you have any questions or want to share something interesting, feel free to interact. We’d love to hear your thoughts!
+"""
+
+# Enlace de descarga directa del PDF en Google Drive
+pdf_link = 'https://drive.google.com/uc?export=download&id=1GuqovCc9ceMoPW2-6Q4t6P_dbMpBGLAq'
+
+# Función que se ejecuta cada vez que el bot recibe un mensaje
+@bot.message_handler(func=lambda message: True)
+def send_welcome_and_pdf(message: Message):
+    # Enviar el mensaje de bienvenida
+    bot.send_message(message.chat.id, welcome_message)
+
+    # Enviar el enlace al PDF
+    bot.send_message(message.chat.id, f"🔮 You can download your e-book here: {pdf_link}")
+
+# Registrar comandos del bot (esto es opcional en este caso)
+def register_commands(bot: TeleBot):
+    commands = [
+        BotCommand("start", "Start the bot"),  # Este comando ya no es necesario, pero lo dejamos por si acaso
+        BotCommand("hello", "Hello"),
+    ]
+    bot.set_my_commands(commands)
+
+register_commands(bot)
+
+# Iniciar el bot
+bot.polling()
