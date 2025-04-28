@@ -1,0 +1,91 @@
+import requests
+import json
+import time
+from web3 import Web3
+from tronpy import Tron
+import telegram
+
+# --- Setup APIs ---
+INFURA_API_KEY = '4b0dfafccedb420fb6c3935435a69107'
+ETHERSCAN_API_KEY = 'W782J9UU674S4CVFVZZ6RA5SS3E42BTTQY'
+
+# --- Setup Wallets ---
+STEALTH_ETH_WALLET = '0xfd882175344c8154f43c8e579eaf6c16a412bcc9'
+STEALTH_TRX_WALLET = 'TJ7gHvAwYTVRvPbL8wxw4F1VxqT2FVRtNp' # example TRX address
+
+# --- Setup Telegram Bot ---
+TELEGRAM_BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE'
+TELEGRAM_CHAT_ID = '6319699539'
+
+bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+
+# --- Setup Web3 ---
+web3 = Web3(Web3.HTTPProvider(f"https://mainnet.infura.io/v3/{INFURA_API_KEY}"))
+
+# --- Check Functions ---
+def check_eth_balance(address):
+    balance = web3.eth.get_balance(address)
+    eth_balance = web3.from_wei(balance, 'ether')
+    return eth_balance
+
+def check_btc_balance(address):
+    url = f"https://blockchain.info/q/addressbalance/{address}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        satoshis = int(response.text)
+        btc_balance = satoshis / 1e8
+        return btc_balance
+    return 0
+
+def check_trx_balance(address):
+    client = Tron()
+    balance = client.get_account_balance(address)
+    return balance
+
+# --- Stealth Withdraw (Simulation) ---
+def stealth_withdraw_eth(found_wallet):
+    # This should trigger a real transfer using private keys.
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Stealth Withdraw Activated ETH -> {STEALTH_ETH_WALLET} from {found_wallet}")
+
+def stealth_withdraw_trx(found_wallet):
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Stealth Withdraw Activated TRX -> {STEALTH_TRX_WALLET} from {found_wallet}")
+
+# --- Main Scanner ---
+def scan_wallets():
+    wallet_list = [
+        # Insert wallets to scan
+        '0x665888c8985974a0a4925b4f78a4538baa903e0b',
+        '0xfd882175344c8154f43c8e579eaf6c16a412bcc9'
+    ]
+    btc_wallets = [
+        '1KFHE7w8BhaENAswwryaoccDb6qcT6DbYY'
+    ]
+    trx_wallets = [
+        'TJ7gHvAwYTVRvPbL8wxw4F1VxqT2FVRtNp'
+    ]
+
+    for wallet in wallet_list:
+        balance = check_eth_balance(wallet)
+        if balance > 0:
+            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"ETH Found: {balance} ETH at {wallet}")
+            stealth_withdraw_eth(wallet)
+
+    for wallet in btc_wallets:
+        balance = check_btc_balance(wallet)
+        if balance > 0:
+            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"BTC Found: {balance} BTC at {wallet}")
+
+    for wallet in trx_wallets:
+        balance = check_trx_balance(wallet)
+        if balance > 0:
+            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"TRX Found: {balance} TRX at {wallet}")
+            stealth_withdraw_trx(wallet)
+
+# --- Loop Forever ---
+while True:
+    try:
+        scan_wallets()
+        time.sleep(60)  # Wait 1 minute before next scan
+    except Exception as e:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Error: {str(e)}")
+        time.sleep(60)
