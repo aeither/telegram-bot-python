@@ -2,4 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "poetry run python main.py"
+startCommand = "python main.py"
+
+[env]
+PYTHON_VERSION = "3.11"
+POETRY_VERSION = "1.8.3"
