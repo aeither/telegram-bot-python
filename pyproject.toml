@@ -14,9 +14,5 @@ dependencies = [
     "python-dotenv>=1.2.1,<2",
 ]
 
-[build-system]
-requires = ["uv_build>=0.9.26,<0.10.0"]
-build-backend = "uv_build"
-
 [tool.uv]
 package = false
