@@ -4,7 +4,7 @@
 
 ## Overview
 
-This project is a simple Telegram bot built using the telebot library. It demonstrates the basic structure of a Telegram bot and uses Poetry for dependency management. The bot responds to commands and messages, and can be easily extended with additional functionality.
+This project is a simple Telegram bot built using the telebot library. It demonstrates the basic structure of a Telegram bot and uses uv for dependency management. The bot responds to commands and messages, and can be easily extended with additional functionality.
 
 ## Key Features
 
@@ -12,14 +12,14 @@ This project is a simple Telegram bot built using the telebot library. It demons
 - Responds to '/start' and '/hello' commands
 - Echoes all other messages
 - Uses telebot for bot functionality
-- Uses Poetry for dependency management
+- Uses uv for dependency management
 - Easy to understand and extend
 
 ## Setup
 
 ```bash
-pip install poetry
-poetry install
+pip install uv
+uv sync
 ```
 
 ## Develop
@@ -27,7 +27,7 @@ poetry install
 To run the bot locally:
 
 ```bash
-poetry run python -B main.py
+uv run python -B main.py
 ```
 
 Make sure to set up your `.env` file with your Telegram bot token:
@@ -59,7 +59,7 @@ Open Telegram, start a chat with your bot, and try the commands `/start` or `
 ## Learn More
 
 - [Telebot Documentation](https://pypi.org/project/pyTelegramBotAPI/)
-- [Poetry Documentation](https://python-poetry.org/docs/)
+- [uv Documentation](https://docs.astral.sh/uv/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
 - [Railway Documentation](https://docs.railway.app/)
 - [Telegram Python Bot Repository](https://github.com/aeither/telegram-bot-python/)
