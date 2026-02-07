@@ -1,5 +1,2 @@
-[build]
-builder = "nixpacks"
-
 [deploy]
-startCommand = "poetry run python main.py"
+startCommand = "uv run python main.py"
