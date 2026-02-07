@@ -1,15 +1,22 @@
-[tool.poetry]
+[project]
 name = "telegram-bot-python"
 version = "0.1.0"
 description = ""
-authors = ["aeither <36173828+aeither@users.noreply.github.com>"]
+authors = [{ name = "aeither", email = "36173828+aeither@users.noreply.github.com" }]
+requires-python = ">=3.12"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-pytelegrambotapi = "^4.21.0"
-python-dotenv = "^1.0.1"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pytelegrambotapi>=4.30.0,<5",
+    "python-dotenv>=1.2.1,<2",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = false

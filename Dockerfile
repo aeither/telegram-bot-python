@@ -1,10 +1,19 @@
-FROM python:3.11.6-slim
+FROM python:3.12-slim-bookworm
 
+# Install uv
+RUN pip install uv
+
+# Set working directory
 WORKDIR /app
-COPY . /app
 
-RUN pip install poetry
-RUN poetry config virtualenvs.create false
-RUN poetry install --no-dev
+# Copy dependency definitions
+COPY pyproject.toml uv.lock ./
 
-CMD ["poetry", "run", "python", "main.py"]
+# Install dependencies
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy the rest of the application
+COPY . .
+
+# Run the application
+CMD ["uv", "run", "python", "main.py"]
