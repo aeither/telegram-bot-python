@@ -1,29 +1,27 @@
-FROM python:3.12-slim-bookworm
-
-# Install uv (pinned version)
-RUN pip install uv==0.9.26
-
-# Create a non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
 
-# Copy dependency definitions
+# Install uv
+RUN pip install --no-cache-dir --upgrade pip uv
+
+# Set UV environment variables for Railway
+ENV UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_NO_SYNC=1
+
+# Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Create the venv directory and give permissions to appuser
-# We need to ensure appuser owns the directory where uv sync will write
-RUN chown -R appuser:appuser /app
+# Install dependencies (no dev, skip project itself)
+RUN uv sync --locked --no-dev --no-install-project
 
-# Switch to non-root user
-USER appuser
+# Copy application code
+COPY . .
 
-# Install dependencies
-RUN uv sync --frozen --no-install-project --no-dev
+# Install the project in non-editable mode
+RUN uv sync --locked --no-dev --no-editable
 
-# Copy the rest of the application
-COPY --chown=appuser:appuser . .
-
-# Run the application
-CMD ["uv", "run", "python", "main.py"]
+# Run bot
+CMD ["uv", "run", "main.py"]
