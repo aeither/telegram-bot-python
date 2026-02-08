@@ -20,4 +20,6 @@ def send_welcome(message):
 def echo_all(message):
     bot.reply_to(message, message.text)
 
+# Remove webhook to avoid conflicts with polling
+bot.delete_webhook(drop_pending_updates=True)
 bot.polling()
