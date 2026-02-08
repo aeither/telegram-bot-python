@@ -1,6 +1,6 @@
 ## Telegram Python Bot
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/a0ln90?referralCode=CODE)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/a0ln90?referralCode=CREDITS)
 
 ## Overview
 
