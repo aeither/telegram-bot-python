@@ -1,2 +1,1 @@
-[deploy]
 startCommand = "uv run python main.py"
