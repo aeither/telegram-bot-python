@@ -1,5 +1,5 @@
--[deploy]
--startCommand = "uv run python main.py"
+[deploy]
+startCommand = "uv run python main.py"
 -{
 -  "$schema": "https://railway.com/railway.schema.json",
 -  "build": {
