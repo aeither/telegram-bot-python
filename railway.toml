@@ -1,2 +1,4 @@
 [deploy]
 startCommand = "uv run python main.py"
+import os
+TOKEN = os.environ.get('BOT_TOKEN')
