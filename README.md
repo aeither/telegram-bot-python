@@ -1,6 +1,6 @@
 # 🎓 SkillCert Bot – Telegram Skill Assessment & Certification
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/xxxx?referralCode=skillcert)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/6ae3d01a-32c9-4bcd-b77c-5d563249ff94?referralCode=skillcert)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/skillcert/bot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
