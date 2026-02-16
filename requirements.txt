@@ -1,0 +1,2 @@
+python-telegram-bot==20.7
+fuzzywuzzy==0.18.0
