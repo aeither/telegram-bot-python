@@ -1,18 +1,7 @@
 [project]
-name = "telegram-bot-python"
+name = "telegram-bot"
 version = "0.1.0"
-description = ""
-authors = [{ name = "aeither", email = "36173828+aeither@users.noreply.github.com" }]
-requires-python = ">=3.12"
-readme = "README.md"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-]
 dependencies = [
-    "pytelegrambotapi>=4.30.0,<5",
-    "python-dotenv>=1.2.1,<2",
+    "python-telegram-bot==20.7",
+    "fuzzywuzzy==0.18.0",
 ]
-
-[tool.uv]
-package = false
