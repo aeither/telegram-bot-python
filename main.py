@@ -21,7 +21,7 @@ try:
         Args:
             message (telebot.types.Message): The message object.
         """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+        bot.reply_to(message, "Вітаю! Це Bitcoin Game 💰")
 
     @bot.message_handler(func=lambda msg: True)
     def echo_all(message):
