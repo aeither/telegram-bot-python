@@ -1,44 +1,88 @@
 import os
-import time
-import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+import sqlite3
+from flask import Flask, request
+from threading import Thread
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Load environment variables
-load_dotenv()
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CPA_LINK = "https://singingfiles.com/show.php?l=0&u=2494540&id=70069&tracking_id={user_id}"
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+app = Flask(__name__)
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+# Database setup
+conn = sqlite3.connect("users.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    balance REAL DEFAULT 0
+)
+""")
+conn.commit()
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+# Telegram bot setup
+bot_app = ApplicationBuilder().token(TOKEN).build()
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    
+    link = CPA_LINK.replace("{user_id}", str(user_id))
+    
+    keyboard = [
+        [InlineKeyboardButton("🔥 Earn Now", url=link)],
+        [InlineKeyboardButton("💰 Check Balance", callback_data="balance")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "Welcome!\n\nComplete offer to earn money 💰",
+        reply_markup=reply_markup
+    )
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
+# Balance command
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    cursor.execute("SELECT balance FROM users WHERE user_id=?", (user_id,))
+    result = cursor.fetchone()
+    
+    if result:
+        bal = result[0]
+    else:
+        bal = 0
+    
+    await update.message.reply_text(f"Your Balance: ${bal:.2f}")
 
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("balance", balance))
 
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+# Postback route
+@app.route("/postback")
+def postback():
+    user_id = request.args.get("userid")
+    payout = request.args.get("payout")
+    
+    if user_id and payout:
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (float(payout), int(user_id)))
+        conn.commit()
+        
+        try:
+            bot_app.bot.send_message(chat_id=int(user_id), text=f"🎉 New Earning: ${payout}")
+        except:
+            pass
+    
+    return "OK"
+
+# Run Flask in separate thread
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    bot_app.run_polling()
