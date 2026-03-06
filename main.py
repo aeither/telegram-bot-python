@@ -1,44 +1,43 @@
 import os
-import time
 import telebot
 from dotenv import load_dotenv
-from commands import register_commands
+import requests
 
-# Load environment variables
 load_dotenv()
-
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+bot = telebot.TeleBot(TOKEN)
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+@bot.message_handler(commands=['start', 'hello'])
+def send_welcome(message):
+    bot.reply_to(message, "ðŸš€ PolyBot Live! Commands: /poly /oscars")
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+@bot.message_handler(commands=['poly'])
+def poly_top(message):
+    try:
+        r = requests.get('https://gamma.api.polymarket.com/markets?active=true&limit=10&sort=volume', timeout=10)
+        data = r.json()
+        msg = "ðŸ† TOP 10 POLYMARKET VALUE BETS:\n\n"
+        count = 0
+        for m in data:
+            yes = m.get('yes_price', 0.5)
+            value_yes = max(0, 1 - yes - 0.15)
+            value_no = max(0, yes - 0.15)
+            if max(value_yes, value_no) > 0 and count < 5:
+                side = 'YES' if value_yes > value_no else 'NO'
+                vol = m.get('volume24hrs', 0)
+                msg += f"â€¢ {m['question'][:50]}...\n  {side}: {max(value_yes,value_no):.1%} Vol ${vol:,.0f}\n\n"
+                count += 1
+        bot.reply_to(message, msg or "No high value bets now.")
+    except Exception as e:
+        bot.reply_to(message, f"Error: {e}")
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+@bot.message_handler(commands=['oscars'])
+def oscars(message):
+    bot.reply_to(message, "ðŸ“½ï¸ OSCARS Sinners: Yes 18% (72% value) RECOMMEND! Vol $23M [page:3]\np olymarket.com/event/oscars-2026-best-picture-winner")
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
+@bot.message_handler(func=lambda msg: True)
+def echo_all(message):
+    bot.reply_to(message, message.text)
 
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
+if __name__ == '__main__':
     bot.polling()
-
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
