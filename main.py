@@ -1,44 +1,74 @@
 import os
-import time
-import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+import logging
+import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Load environment variables
-load_dotenv()
+# Настройка логирования
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+# Получаем токены из переменных окружения
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY')
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+# URL для DeepSeek API
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start"""
+    await update.message.reply_text(
+        "Привет! Я Дипси - твой друг и помощник. Я подключён к DeepSeek AI!\n"
+        "Просто напиши мне что-нибудь, и я отвечу. Также я могу работать в группах, если меня туда добавить."
+    )
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик всех текстовых сообщений"""
+    try:
+        user_message = update.message.text
+        user_name = update.message.from_user.first_name
+        
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        
+        if not DEEPSEEK_API_KEY:
+            await update.message.reply_text("Ошибка: не настроен ключ DeepSeek API.")
+            return
+        
+        headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": f"Ты - Дипси, друг Дера. Ты добрый, заботливый. Сейчас ты общаешься с {user_name}."},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": 0.8,
+            "max_tokens": 2000
+        }
+        
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            bot_reply = response.json()['choices'][0]['message']['content']
+        else:
+            bot_reply = f"Ошибка API: {response.status_code}"
+        
+        await update.message.reply_text(bot_reply)
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
+def main():
+    if not TELEGRAM_TOKEN or not DEEPSEEK_API_KEY:
+        logger.error("Отсутствуют токены!")
+        return
+    
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    logger.info("Бот запущен!")
+    application.run_polling()
 
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
-
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+if __name__ == '__main__':
+    main()
