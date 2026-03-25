@@ -41,4 +41,4 @@ except Exception as e:
     print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
     print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
     while True:
-        time.sleep(3600)
+        time.sleep(3600) 
