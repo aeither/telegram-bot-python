@@ -1,44 +1,37 @@
-import os
-import time
 import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+import yt_dlp
+import os
 
-# Load environment variables
-load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+bot = telebot.TeleBot(TOKEN)
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    text = message.text
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+    if "http" in text:
+        bot.reply_to(message, "⏳ جاري التحميل...")
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+        ydl_opts = {
+            'outtmpl': 'video.mp4',
+            'format': 'best'
+        }
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([text])
 
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
+            with open('video.mp4', 'rb') as video:
+                bot.send_video(message.chat.id, video)
 
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+            os.remove('video.mp4')
+
+        except Exception as e:
+            bot.reply_to(message, f"❌ حصل خطأ: {e}")
+
+    else:
+        bot.reply_to(message, "ابعت لينك فيديو بس 🎥")
+
+bot.remove_webhook()
+bot.infinity_polling()
