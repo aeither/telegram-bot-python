@@ -1,2 +1,256 @@
 [deploy]
 startCommand = "uv run python main.py"
+import telebot
+from telebot import types
+import sqlite3
+import time
+
+# ===== CONFIG =====
+TOKEN = "7293546307:AAHKAYnZpKouA6JU9n7-IiEtMzbd_CqCOXI"
+CHANNEL = "@virostore34"
+BOT_USERNAME = "virostore_bot"
+ADMIN_ID = 5099884611
+ADMIN_GROUP_ID = -1003732131155
+
+bot = telebot.TeleBot(TOKEN)
+
+# ===== DATABASE =====
+db = sqlite3.connect("users.db", check_same_thread=False)
+c = db.cursor()
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    user_id INTEGER PRIMARY KEY,
+    balance REAL DEFAULT 0,
+    referrer INTEGER,
+    joined INTEGER DEFAULT 0,
+    banned INTEGER DEFAULT 0,
+    last_claim INTEGER DEFAULT 0
+)
+""")
+db.commit()
+
+# ===== DB FUNCTIONS =====
+def add_user(uid, ref=None):
+    c.execute("INSERT OR IGNORE INTO users(user_id,balance,referrer,joined,banned,last_claim) VALUES(?,?,?,?,?,?)",
+              (uid,0,ref,0,0,0))
+    db.commit()
+
+def get_balance(uid):
+    c.execute("SELECT balance FROM users WHERE user_id=?", (uid,))
+    r = c.fetchone()
+    return r[0] if r else 0
+
+def add_money(uid, amt):
+    c.execute("UPDATE users SET balance=balance+? WHERE user_id=?", (amt,uid))
+    db.commit()
+
+def sub_money(uid, amt):
+    c.execute("UPDATE users SET balance=balance-? WHERE user_id=?", (amt,uid))
+    db.commit()
+
+def is_joined(uid):
+    c.execute("SELECT joined FROM users WHERE user_id=?", (uid,))
+    r = c.fetchone()
+    return r[0] if r else 0
+
+def set_joined(uid):
+    c.execute("UPDATE users SET joined=1 WHERE user_id=?", (uid,))
+    db.commit()
+
+def is_banned(uid):
+    c.execute("SELECT banned FROM users WHERE user_id=?", (uid,))
+    r = c.fetchone()
+    return r[0] if r else 0
+
+def is_admin(uid):
+    return uid == ADMIN_ID
+
+# ===== CHECK JOIN =====
+def check_join(uid):
+    try:
+        member = bot.get_chat_member(CHANNEL, uid)
+        return member.status in ["member","administrator","creator"]
+    except:
+        return False
+
+# ===== REQUIRE JOIN DECORATOR =====
+def require_join(func):
+    def wrapper(m):
+        uid = m.from_user.id
+        if is_banned(uid):
+            bot.send_message(m.chat.id,"🚫 អ្នកត្រូវបាន ban")
+            return
+        if not check_join(uid):
+            mk = types.InlineKeyboardMarkup()
+            mk.add(types.InlineKeyboardButton("📢 Join", url=f"https://t.me/{CHANNEL[1:]}"))
+            mk.add(types.InlineKeyboardButton("✅ Check", callback_data="check"))
+            bot.send_message(m.chat.id,"❌ Join channel មុន",reply_markup=mk)
+            return
+        return func(m)
+    return wrapper
+
+# ===== MENU =====
+def menu(cid, uid):
+    mk = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    mk.row("👤 គណនី","👥 Invite")
+    mk.row("🎁 Daily Bonus","📋 Tasks")
+    mk.row("💸 ដកប្រាក់")
+    if is_admin(uid):
+        mk.row("⚙️ Admin Panel")
+    bot.send_message(cid,"📋 VIP MENU",reply_markup=mk)
+
+# ===== START =====
+@bot.message_handler(commands=['start'])
+def start(m):
+    uid = m.from_user.id
+    args = m.text.split()
+    ref = None
+    if len(args) > 1:
+        try:
+            ref = int(args[1])
+        except: ref=None
+    if ref == uid: ref=None
+
+    c.execute("SELECT user_id FROM users WHERE user_id=?", (uid,))
+    if c.fetchone() is None: add_user(uid,ref)
+    else: add_user(uid)
+
+    if is_banned(uid):
+        bot.send_message(m.chat.id,"🚫 banned")
+        return
+
+    if not check_join(uid):
+        mk = types.InlineKeyboardMarkup()
+        mk.add(types.InlineKeyboardButton("📢 Join", url=f"https://t.me/{CHANNEL[1:]}"))
+        mk.add(types.InlineKeyboardButton("✅ Check", callback_data="check"))
+        bot.send_message(m.chat.id,"📢 Join channel first",reply_markup=mk)
+        return
+
+    bot.send_message(m.chat.id,"✅ Welcome! /start works now")
+    menu(m.chat.id, uid)
+
+# ===== CALLBACK CHECK =====
+@bot.callback_query_handler(func=lambda c:c.data=="check")
+def check_cb(ca):
+    uid = ca.from_user.id
+    if not check_join(uid):
+        bot.answer_callback_query(ca.id,"❌ Join first")
+        return
+
+    if is_joined(uid)==0:
+        add_money(uid,0.03)
+        set_joined(uid)
+        c.execute("SELECT referrer FROM users WHERE user_id=?", (uid,))
+        ref=c.fetchone()
+        if ref and ref[0]:
+            add_money(ref[0],0.04)
+            try: bot.send_message(ref[0],"🎉 Referral +$0.04")
+            except: pass
+
+    bot.answer_callback_query(ca.id,"✅ Done")
+    menu(ca.message.chat.id,uid)
+
+# ===== ACCOUNT =====
+@bot.message_handler(func=lambda m:m.text=="👤 គណនី")
+@require_join
+def acc(m):
+    bot.send_message(m.chat.id,f"💰 ${get_balance(m.from_user.id):.2f}")
+
+# ===== INVITE =====
+@bot.message_handler(func=lambda m:m.text=="👥 Invite")
+@require_join
+def inv(m):
+    link=f"https://t.me/{BOT_USERNAME}?start={m.from_user.id}"
+    bot.send_message(m.chat.id,link)
+
+# ===== DAILY =====
+@bot.message_handler(func=lambda m:m.text=="🎁 Daily Bonus")
+@require_join
+def daily(m):
+    uid=m.from_user.id
+    now=int(time.time())
+    c.execute("SELECT last_claim FROM users WHERE user_id=?",(uid,))
+    last=c.fetchone()[0]
+    if now-last<86400:
+        bot.send_message(m.chat.id,"⏳ wait 24h")
+        return
+    add_money(uid,0.02)
+    c.execute("UPDATE users SET last_claim=? WHERE user_id=?",(now,uid))
+    db.commit()
+    bot.send_message(m.chat.id,"🎉 +0.02")
+
+# ===== TASK =====
+@bot.message_handler(func=lambda m:m.text=="📋 Tasks")
+@require_join
+def task_btn(m):
+    mk=types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("Join", url=f"https://t.me/{CHANNEL[1:]}"))
+    mk.add(types.InlineKeyboardButton("Check", callback_data="task_check"))
+    bot.send_message(m.chat.id,"Complete task to earn $0.02",reply_markup=mk)
+
+@bot.callback_query_handler(func=lambda c:c.data=="task_check")
+def task_check(ca):
+    uid=ca.from_user.id
+    if check_join(uid):
+        add_money(uid,0.02)
+        bot.send_message(uid,"🎉 +$0.02")
+    else:
+        bot.send_message(uid,"❌ Not done")
+
+# ===== WITHDRAW =====
+withdraw_requests={}
+@bot.message_handler(func=lambda m:m.text=="💸 ដកប្រាក់")
+@require_join
+def wd_start(m):
+    if get_balance(m.from_user.id)<0.25:
+        bot.send_message(m.chat.id,"Min withdraw $0.25")
+        return
+    bot.send_message(m.chat.id,"📸 Send QR code")
+
+@bot.message_handler(content_types=['photo'])
+def get_qr(m):
+    withdraw_requests[m.from_user.id]={"qr":m.photo[-1].file_id}
+    bot.send_message(m.chat.id,"💰 Amount?")
+
+@bot.message_handler(func=lambda m:m.text.replace('.','',1).isdigit())
+def get_amount(m):
+    uid=m.from_user.id
+    if uid not in withdraw_requests: return
+    amount=float(m.text)
+    if amount>get_balance(uid):
+        bot.send_message(m.chat.id,"❌ Not enough")
+        return
+    withdraw_requests[uid]["amount"]=amount
+    mk=types.InlineKeyboardMarkup()
+    mk.add(types.InlineKeyboardButton("✅",callback_data=f"wd_done_{uid}"))
+    mk.add(types.InlineKeyboardButton("❌",callback_data=f"wd_no_{uid}"))
+    bot.send_photo(ADMIN_GROUP_ID,withdraw_requests[uid]["qr"],caption=f"User:{uid} ${amount}",reply_markup=mk)
+    bot.send_message(m.chat.id,"Sent to admin")
+
+@bot.callback_query_handler(func=lambda c:c.data.startswith("wd_"))
+def wd_cb(ca):
+    _,act,uid=ca.data.split("_")
+    uid=int(uid)
+    if uid not in withdraw_requests: return
+    amt=withdraw_requests[uid]["amount"]
+    if act=="done":
+        sub_money(uid,amt)
+        bot.send_message(uid,f"✅ Paid ${amt}")
+    else:
+        bot.send_message(uid,"❌ Cancel")
+    del withdraw_requests[uid]
+    bot.answer_callback_query(ca.id)
+
+# ===== ADMIN PANEL =====
+@bot.message_handler(func=lambda m:m.text=="⚙️ Admin Panel")
+def admin_panel(m):
+    if not is_admin(m.from_user.id): return
+    mk=types.ReplyKeyboardMarkup(resize_keyboard=True)
+    mk.row("Users","Add")
+    mk.row("Broadcast","Ban")
+    mk.row("Unban","Back")
+    bot.send_message(m.chat.id,"Admin Panel",reply_markup=mk)
+
+# ===== RUN BOT =====
+bot.infinity_polling()
