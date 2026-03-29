@@ -1,2 +1,442 @@
-[deploy]
-startCommand = "uv run python main.py"
+import os
+import json
+import random
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.constants import ChatAction
+
+# Variables globales
+games = {}  # {game_id: game_object}
+TOKEN = "8688837364:AAHMpSjqLCy7WLYyaDSY7sxBI2nD7n9ZdFw"
+
+# Clases del juego
+class Carta:
+    def __init__(self, color, numero):
+        self.color = color
+        self.numero = numero
+    
+    def __str__(self):
+        return f"{self.color} {self.numero}"
+    
+    def __repr__(self):
+        return f"Carta({self.color}, {self.numero})"
+
+class Juego:
+    COLORES = ["🔴 Rojo", "🟡 Amarillo", "🟢 Verde", "🔵 Azul"]
+    NUMEROS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "+2", "REVERSA", "SALTA"]
+    ESPECIALES = ["+2", "REVERSA", "SALTA"]
+    
+    def __init__(self, game_id, chat_id=None):
+        self.game_id = game_id
+        self.chat_id = chat_id
+        self.jugadores = []
+        self.mazo = []
+        self.descarte = []
+        self.turno_actual = 0
+        self.direccion = 1  # 1 = adelante, -1 = reversa
+        self.iniciado = False
+        self.cartas_acumuladas = 0
+        self.crear_mazo()
+    
+    def crear_mazo(self):
+        """Crea el mazo estándar de UNO"""
+        self.mazo = []
+        for color in self.COLORES:
+            # Cartas numéricas (0-9)
+            for numero in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                self.mazo.append(Carta(color, numero))
+                if numero != "0":  # El 0 solo una vez
+                    self.mazo.append(Carta(color, numero))
+            
+            # Cartas especiales (+2, REVERSA, SALTA) - 2 de cada
+            for especial in ["+2", "REVERSA", "SALTA"]:
+                self.mazo.append(Carta(color, especial))
+                self.mazo.append(Carta(color, especial))
+        
+        random.shuffle(self.mazo)
+    
+    def repartir_cartas(self, cantidad=7):
+        """Reparte cartas a los jugadores"""
+        for jugador in self.jugadores:
+            jugador["mano"] = []
+            for _ in range(cantidad):
+                if not self.mazo:
+                    self.reorganizar_mazo()
+                jugador["mano"].append(self.mazo.pop())
+    
+    def reorganizar_mazo(self):
+        """Reorganiza el mazo con las cartas descartadas"""
+        if len(self.descarte) > 1:
+            ultima = self.descarte[-1]
+            self.mazo = self.descarte[:-1]
+            self.descarte = [ultima]
+            random.shuffle(self.mazo)
+    
+    def agregar_jugador(self, user_id, nombre):
+        """Agrega un jugador al juego"""
+        if len(self.jugadores) >= 4:
+            return False
+        self.jugadores.append({
+            "user_id": user_id,
+            "nombre": nombre,
+            "mano": []
+        })
+        return True
+    
+    def iniciar_juego(self):
+        """Inicia el juego"""
+        if len(self.jugadores) < 2:
+            return False
+        
+        self.repartir_cartas()
+        # Primera carta del descarte
+        self.descarte.append(self.mazo.pop())
+        self.iniciado = True
+        return True
+    
+    def obtener_jugador_actual(self):
+        """Obtiene el jugador actual"""
+        return self.jugadores[self.turno_actual]
+    
+    def puede_jugar(self, carta):
+        """Verifica si una carta puede jugarse"""
+        ultima = self.descarte[-1]
+        if self.cartas_acumuladas > 0 and carta.numero != "+2":
+            return False
+        return (carta.color == ultima.color or 
+                carta.numero == ultima.numero or 
+                carta.numero == "+2")
+    
+    def jugar_carta(self, usuario_id, indice_carta):
+        """Juega una carta"""
+        jugador = self.obtener_jugador_actual()
+        if jugador["user_id"] != usuario_id:
+            return False, "No es tu turno"
+        
+        if indice_carta < 0 or indice_carta >= len(jugador["mano"]):
+            return False, "Carta inválida"
+        
+        carta = jugador["mano"][indice_carta]
+        
+        if not self.puede_jugar(carta):
+            return False, "No puedes jugar esa carta"
+        
+        self.descarte.append(carta)
+        jugador["mano"].pop(indice_carta)
+        
+        # Procesar efectos especiales
+        if carta.numero == "+2":
+            self.cartas_acumuladas += 2
+        elif carta.numero == "REVERSA":
+            self.direccion *= -1
+        elif carta.numero == "SALTA":
+            self.pasar_turno()
+        
+        # Pasar turno
+        self.pasar_turno()
+        
+        return True, "Carta jugada"
+    
+    def pasar_turno(self):
+        """Pasa el turno al siguiente jugador"""
+        self.turno_actual = (self.turno_actual + self.direccion) % len(self.jugadores)
+    
+    def robar_carta(self, usuario_id):
+        """Roba una carta"""
+        jugador = self.obtener_jugador_actual()
+        if jugador["user_id"] != usuario_id:
+            return False, "No es tu turno"
+        
+        if not self.mazo:
+            self.reorganizar_mazo()
+        
+        if self.cartas_acumuladas > 0:
+            for _ in range(self.cartas_acumuladas):
+                if not self.mazo:
+                    self.reorganizar_mazo()
+                jugador["mano"].append(self.mazo.pop())
+            self.cartas_acumuladas = 0
+        else:
+            jugador["mano"].append(self.mazo.pop())
+        
+        self.pasar_turno()
+        return True, "Carta robada"
+    
+    def verificar_ganador(self):
+        """Verifica si hay un ganador"""
+        for jugador in self.jugadores:
+            if len(jugador["mano"]) == 0:
+                return jugador
+        return None
+    
+    def obtener_estado(self):
+        """Obtiene el estado actual del juego"""
+        jugador_actual = self.obtener_jugador_actual()
+        ultima_carta = self.descarte[-1]
+        return {
+            "jugador_actual": jugador_actual["nombre"],
+            "ultima_carta": str(ultima_carta),
+            "cartas_descarte": len(self.descarte),
+            "jugadores": [
+                {
+                    "nombre": j["nombre"],
+                    "cartas": len(j["mano"])
+                }
+                for j in self.jugadores
+            ],
+            "cartas_acumuladas": self.cartas_acumuladas
+        }
+
+# Handlers del bot
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
+    mensaje = """🎮 ¡Bienvenido al Bot de UNO Argentino!
+
+Comandos:
+/crear_juego - Crear una nueva partida
+/unirse - Unirse a una partida
+/estado - Ver estado del juego
+/jugar - Jugar una carta
+/robar - Robar una carta
+
+¡Que comience la diversión! 🎉"""
+    
+    await update.message.reply_text(mensaje)
+
+async def crear_juego(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /crear_juego"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    game_id = f"{chat_id}_{user_id}"
+    
+    if game_id in games:
+        await update.message.reply_text("❌ Ya hay un juego creado. Usa /unirse para unirte.")
+        return
+    
+    games[game_id] = Juego(game_id, chat_id)
+    games[game_id].agregar_jugador(user_id, update.effective_user.first_name)
+    
+    await update.message.reply_text(
+        f"✅ Juego creado por {update.effective_user.first_name}\n"
+        f"Otros jugadores pueden usar /unirse para sumarse"
+    )
+
+async def unirse(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /unirse"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # Buscar juego en este chat
+    game_id = None
+    for gid in games:
+        if games[gid].chat_id == chat_id:
+            game_id = gid
+            break
+    
+    if not game_id:
+        await update.message.reply_text("❌ No hay juego activo. Usa /crear_juego")
+        return
+    
+    juego = games[game_id]
+    
+    if any(j["user_id"] == user_id for j in juego.jugadores):
+        await update.message.reply_text("❌ Ya estás en el juego")
+        return
+    
+    if juego.iniciado:
+        await update.message.reply_text("❌ El juego ya comenzó")
+        return
+    
+    if juego.agregar_jugador(user_id, update.effective_user.first_name):
+        jugadores = ", ".join([j["nombre"] for j in juego.jugadores])
+        await update.message.reply_text(
+            f"✅ {update.effective_user.first_name} se unió al juego\n"
+            f"Jugadores: {jugadores}\n"
+            f"Cuando haya 2-4 jugadores, usa /empezar"
+        )
+    else:
+        await update.message.reply_text("❌ El juego está lleno (máx 4 jugadores)")
+
+async def empezar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /empezar"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    game_id = None
+    for gid in games:
+        if games[gid].chat_id == chat_id:
+            game_id = gid
+            break
+    
+    if not game_id:
+        await update.message.reply_text("❌ No hay juego activo")
+        return
+    
+    juego = games[game_id]
+    
+    if not juego.agregar_jugador(user_id, update.effective_user.first_name):
+        if not any(j["user_id"] == user_id for j in juego.jugadores):
+            await update.message.reply_text("❌ No estás en el juego")
+            return
+    
+    if juego.iniciar_juego():
+        jugadores = ", ".join([j["nombre"] for j in juego.jugadores])
+        await update.message.reply_text(
+            f"🎉 ¡El juego comienza!\n"
+            f"Jugadores: {jugadores}\n"
+            f"Primera carta: {juego.descarte[-1]}\n"
+            f"Turno de: {juego.obtener_jugador_actual()['nombre']}"
+        )
+        
+        # Enviar manos privadas
+        for jugador in juego.jugadores:
+            mano_texto = "\n".join([f"{i}: {c}" for i, c in enumerate(jugador["mano"])])
+            await context.bot.send_message(
+                chat_id=jugador["user_id"],
+                text=f"Tu mano:\n{mano_texto}"
+            )
+    else:
+        await update.message.reply_text("❌ Se necesitan al menos 2 jugadores")
+
+async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /estado"""
+    chat_id = update.effective_chat.id
+    
+    game_id = None
+    for gid in games:
+        if games[gid].chat_id == chat_id:
+            game_id = gid
+            break
+    
+    if not game_id:
+        await update.message.reply_text("❌ No hay juego activo")
+        return
+    
+    juego = games[game_id]
+    estado = juego.obtener_estado()
+    
+    mensaje = f"""
+📊 Estado del Juego:
+Turno: {estado['jugador_actual']}
+Última carta: {estado['ultima_carta']}
+Cartas acumuladas: {estado['cartas_acumuladas']}
+
+Jugadores:
+"""
+    for j in estado['jugadores']:
+        mensaje += f"  {j['nombre']}: {j['cartas']} cartas\n"
+    
+    await update.message.reply_text(mensaje)
+
+async def jugar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /jugar [índice]"""
+    if not context.args:
+        await update.message.reply_text("Uso: /jugar [índice_carta]")
+        return
+    
+    try:
+        indice = int(context.args[0])
+    except:
+        await update.message.reply_text("❌ Índice inválido")
+        return
+    
+    user_id = update.effective_user.id
+    
+    game_id = None
+    for gid in games:
+        if any(j["user_id"] == user_id for j in games[gid].jugadores):
+            game_id = gid
+            break
+    
+    if not game_id:
+        await update.message.reply_text("❌ No estás en un juego")
+        return
+    
+    juego = games[game_id]
+    exito, mensaje = juego.jugar_carta(user_id, indice)
+    
+    if exito:
+        jugador = next(j for j in juego.jugadores if j["user_id"] == user_id)
+        await context.bot.send_message(
+            chat_id=juego.chat_id,
+            text=f"✅ {jugador['nombre']} jugó: {juego.descarte[-1]}"
+        )
+        
+        # Verificar ganador
+        ganador = juego.verificar_ganador()
+        if ganador:
+            await context.bot.send_message(
+                chat_id=juego.chat_id,
+                text=f"🏆 ¡{ganador['nombre']} ganó!"
+            )
+            del games[game_id]
+        else:
+            # Mostrar turno siguiente
+            siguiente = juego.obtener_jugador_actual()
+            await context.bot.send_message(
+                chat_id=juego.chat_id,
+                text=f"Turno de: {siguiente['nombre']}"
+            )
+            
+            # Enviar mano privada
+            mano_texto = "\n".join([f"{i}: {c}" for i, c in enumerate(siguiente["mano"])])
+            await context.bot.send_message(
+                chat_id=siguiente["user_id"],
+                text=f"Tu turno!\nTu mano:\n{mano_texto}\nÚltima carta jugada: {juego.descarte[-1]}"
+            )
+    else:
+        await update.message.reply_text(f"❌ {mensaje}")
+
+async def robar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /robar"""
+    user_id = update.effective_user.id
+    
+    game_id = None
+    for gid in games:
+        if any(j["user_id"] == user_id for j in games[gid].jugadores):
+            game_id = gid
+            break
+    
+    if not game_id:
+        await update.message.reply_text("❌ No estás en un juego")
+        return
+    
+    juego = games[game_id]
+    exito, mensaje = juego.robar_carta(user_id)
+    
+    if exito:
+        await context.bot.send_message(
+            chat_id=juego.chat_id,
+            text=f"🎴 {juego.jugadores[[j['user_id'] for j in juego.jugadores].index(user_id)]['nombre']} robó carta(s)"
+        )
+        
+        # Mostrar turno siguiente
+        siguiente = juego.obtener_jugador_actual()
+        mano_texto = "\n".join([f"{i}: {c}" for i, c in enumerate(siguiente["mano"])])
+        await context.bot.send_message(
+            chat_id=siguiente["user_id"],
+            text=f"Tu turno!\nTu mano:\n{mano_texto}"
+        )
+    else:
+        await update.message.reply_text(f"❌ {mensaje}")
+
+# Función principal
+async def main():
+    """Inicia el bot"""
+    application = Application.builder().token(TOKEN).build()
+    
+    # Handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("crear_juego", crear_juego))
+    application.add_handler(CommandHandler("unirse", unirse))
+    application.add_handler(CommandHandler("empezar", empezar))
+    application.add_handler(CommandHandler("estado", estado))
+    application.add_handler(CommandHandler("jugar", jugar))
+    application.add_handler(CommandHandler("robar", robar))
+    
+    # Iniciar bot
+    await application.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
