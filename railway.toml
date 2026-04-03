@@ -1,2 +1,103 @@
-[deploy]
+import logging
+import math
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+logging.basicConfig(level=logging.INFO)
+
+# 🔢 تحويل odds → احتمالات
+def odds_to_prob(odd):
+    return 1 / odd
+
+# 📊 حساب λ (Poisson)
+def calculate_lambda(home, draw, away):
+    p_home = odds_to_prob(home)
+    p_draw = odds_to_prob(draw)
+    p_away = odds_to_prob(away)
+
+    total = p_home + p_draw + p_away
+    p_home /= total
+    p_away /= total
+
+    home_lambda = 1.5 * p_home * 2
+    away_lambda = 1.5 * p_away * 2
+
+    return home_lambda, away_lambda
+
+# 📈 دالة Poisson
+def poisson(lmbda, k):
+    return (lmbda ** k * math.exp(-lmbda)) / math.factorial(k)
+
+# 📊 حساب النتائج
+def match_analysis(home, draw, away):
+    home_l, away_l = calculate_lambda(home, draw, away)
+
+    max_goals = 5
+    prob_matrix = []
+
+    for i in range(max_goals):
+        row = []
+        for j in range(max_goals):
+            prob = poisson(home_l, i) * poisson(away_l, j)
+            row.append(prob)
+        prob_matrix.append(row)
+
+    # 🎯 حساب Over 2.5
+    over25 = 0
+    btts = 0
+
+    for i in range(max_goals):
+        for j in range(max_goals):
+            if i + j > 2:
+                over25 += prob_matrix[i][j]
+            if i > 0 and j > 0:
+                btts += prob_matrix[i][j]
+
+    return home_l, away_l, over25, btts
+
+# 📩 start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📊 Bot Pro 🔥\n"
+        "دخل odds هكا:\n"
+        "1.80 3.50 4.20"
+    )
+
+# 📊 تحليل
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        h, d, a = map(float, update.message.text.split())
+
+        hl, al, over25, btts = match_analysis(h, d, a)
+
+        total = hl + al
+
+        bet = "🔥 Over 2.5" if over25 > 0.55 else "❄️ Under 2.5"
+        btts_res = "✅ BTTS Yes" if btts > 0.55 else "❌ BTTS No"
+
+        msg = (
+            f"📊 تحليل متقدم:\n\n"
+            f"⚽ λ Home: {hl:.2f}\n"
+            f"⚽ λ Away: {al:.2f}\n"
+            f"🎯 Expected Goals: {total:.2f}\n\n"
+            f"📈 Over 2.5: {over25:.2%}\n"
+            f"📈 BTTS: {btts:.2%}\n\n"
+            f"💡 الرهان:\n{bet}\n{btts_res}"
+        )
+
+        await update.message.reply_text(msg)
+
+    except:
+        await update.message.reply_text("❌ دخل odds: 1.80 3.50 4.20")
+
+# 🚀 تشغيل
+TOKEN = os.getenv("BOT_TOKEN")
+
+app = ApplicationBuilder().token(TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+
+app.run_polling()[deploy]
 startCommand = "uv run python main.py"
