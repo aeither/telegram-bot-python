@@ -1,44 +1,87 @@
 import os
-import time
 import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+from telebot import types
+import yt_dlp
 
-# Load environment variables
-load_dotenv()
+TOKEN = os.getenv("8709005198:AAEIw9YwBKi1iRYn2oQlw_8CR_OWe9XD3ms")
+bot = telebot.TeleBot(TOKEN)
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+# Простая база "платных" пользователей
+paid_users = set()
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+# ---------------- START ----------------
+@bot.message_handler(commands=['start'])
+def start(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+    btn1 = types.KeyboardButton("📥 Скачать видео")
+    btn2 = types.KeyboardButton("💰 Купить доступ")
+    btn3 = types.KeyboardButton("ℹ️ Помощь")
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+    markup.add(btn1, btn2, btn3)
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
+    bot.send_message(
+        message.chat.id,
+        "Привет 👋\nЯ бот для скачивания видео.\nВыбери действие:",
+        reply_markup=markup
+    )
 
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
+# ---------------- HELP ----------------
+@bot.message_handler(commands=['help'])
+def help_cmd(message):
+    bot.send_message(
+        message.chat.id,
+        "📌 Как пользоваться:\n"
+        "1. Нажми 'Скачать видео'\n"
+        "2. Отправь ссылку\n\n"
+        "Поддержка: YouTube, TikTok, Instagram и др."
+    )
 
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+# ---------------- BUY ----------------
+@bot.message_handler(func=lambda m: m.text == "💰 Купить доступ")
+def buy(message):
+    bot.send_message(
+        message.chat.id,
+        "💳 Для теста введи команду /pay\n"
+        "После этого доступ откроется."
+    )
+
+@bot.message_handler(commands=['pay'])
+def pay(message):
+    paid_users.add(message.chat.id)
+    bot.send_message(message.chat.id, "✅ Доступ активирован!")
+
+# ---------------- DOWNLOAD BUTTON ----------------
+@bot.message_handler(func=lambda m: m.text == "📥 Скачать видео")
+def ask_link(message):
+    bot.send_message(message.chat.id, "Отправь ссылку на видео 🎥")
+
+# ---------------- DOWNLOAD LOGIC ----------------
+@bot.message_handler(content_types=['text'])
+def handle_link(message):
+    url = message.text
+
+    # Проверка доступа
+    if message.chat.id not in paid_users:
+        bot.send_message(message.chat.id, "❌ Сначала купите доступ.")
+        return
+
+    bot.send_message(message.chat.id, "⏳ Скачиваю видео...")
+
+    try:
+        ydl_opts = {
+            'outtmpl': 'video.mp4',
+            'format': 'mp4'
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        with open("video.mp4", "rb") as video:
+            bot.send_video(message.chat.id, video)
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ Ошибка: {e}")
+
+# ---------------- RUN ----------------
+bot.polling()
