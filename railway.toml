@@ -1,2 +1,131 @@
-[deploy]
-startCommand = "uv run python main.py"
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, filters
+import google.generativeai as genai
+
+# 1. Setup Gemini with your new API Key
+GEMINI_KEY = "AIzaSyDIIEJZFbY6ie1dXM4QpzD46sM1QQ4osxQ"
+genai.configure(api_key=GEMINI_KEY)
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+    level=logging.INFO
+)
+
+# --- Welcome Screen / Start Command ---
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear() 
+    context.user_data['waiting_for_exam'] = True
+    
+    welcome_message = (
+        "⚡⚡WELCOME TO JARVIS EDUCATION SERVICES\n"
+        "THIS IS A ACADEMIC HELPER BOT SO USE IT RESPONSIBLEY ⚡⚡\n\n"
+        "Before we begin, which exam are you preparing for? (e.g., JEE, NEET, UPSC, CBSE Class 12)"
+    )
+    await update.message.reply_text(welcome_message)
+
+# Command to let users change their exam & wipe memory
+async def reset_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    context.user_data['waiting_for_exam'] = True
+    await update.message.reply_text("Memory wiped and exam preference cleared! 🔄\nWhich exam are you preparing for now?")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    
+    # --- EXAM CHECK ---
+    if 'exam' not in context.user_data:
+        if context.user_data.get('waiting_for_exam'):
+            context.user_data['exam'] = update.message.text
+            context.user_data['waiting_for_exam'] = False
+            await update.message.reply_text(f"Target locked on {update.message.text}! 🎯\nNow, send me your questions or images. I will ONLY answer questions related to this exam. (Type /reset if you ever need to change it).")
+            return
+        else:
+            context.user_data['waiting_for_exam'] = True
+            await update.message.reply_text("Please click or type /start to begin!")
+            return
+            
+    exam_name = context.user_data['exam']
+    
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        
+        user_text = update.message.text or update.message.caption or "Please explain or solve what is in this image."
+        
+        # Prepare the parts for Gemini
+        parts = [user_text]
+        
+        if update.message.photo:
+            photo = await update.message.photo[-1].get_file()
+            # Download image and convert directly to bytes for Gemini
+            image_bytes = bytes(await photo.download_as_bytearray())
+            parts.append({
+                "mime_type": "image/jpeg",
+                "data": image_bytes
+            })
+
+        # --- MEMORY SYSTEM ---
+        if 'history' not in context.user_data:
+            context.user_data['history'] = []
+            
+        # Note: Gemini uses 'user' and 'model' for roles
+        context.user_data['history'].append({"role": "user", "parts": parts})
+        
+        if len(context.user_data['history']) > 16:
+            context.user_data['history'] = context.user_data['history'][-16:]
+
+        # --- INITIALIZE GEMINI MODEL ---
+        system_rules = f"You are a strict academic tutor exclusively for the {exam_name} exam. Solve doubts step-by-step. CRITICAL MATH RULES: Write math in absolute plain English. NEVER use LaTeX, backslashes, or curly braces. Use standard parentheses (a)/(b) for fractions. Use '*' for multiplication and '~' for approximately. CRITICAL OFF-TOPIC RULE: If the user's question is completely unrelated to the {exam_name} syllabus, you MUST reply EXACTLY with this phrase and nothing else: PTA HAI BCC PADAI KRNI HAI PR MASTI DEKHO BCC"
+        
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=system_rules
+        )
+
+        # Ask Gemini (Passing the whole chat history so it remembers)
+        chat_response = model.generate_content(context.user_data['history'])
+        response = chat_response.text
+        
+        # --- THE ENHANCED FILTER: Scrub all remaining LaTeX artifacts ---
+        response = response.replace('\\(', '').replace('\\)', '')
+        response = response.replace('\\[', '').replace('\\]', '')
+        response = response.replace('\\times', ' * ')
+        response = response.replace('\\cdot', ' * ')
+        response = response.replace('\\pi', 'pi')
+        response = response.replace('\\rho', 'density')
+        response = response.replace('\\omega', 'omega')
+        response = response.replace('\\approx', ' ~ ')
+        response = response.replace('\\text', '')
+        response = response.replace('\\frac', '') 
+        response = response.replace('{', '(').replace('}', ')') 
+        response = response.replace('\\', '') 
+        # --------------------------------------------------------
+        
+        # Save Bot's response to memory
+        context.user_data['history'].append({"role": "model", "parts": [response]})
+        
+        await update.message.reply_text(response)
+        
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "429" in error_msg or "rate limit" in error_msg or "quota" in error_msg:
+            await update.message.reply_text("ABE BKL THODA DHIRE QUESTION BHEJ")
+        else:
+            await update.message.reply_text("I'm having trouble reading that right now. Please try again!")
+            print(f"Error encountered: {e}")
+            if len(context.user_data.get('history', [])) > 0:
+                context.user_data['history'].pop()
+
+if __name__ == '__main__':
+    # 2. Your Telegram Bot Token
+    BOT_TOKEN = "8709984228:AAEE3DvKyl5urtKKfh1O08VP6ZnGJ-NYhkg"
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("reset", reset_exam))
+    msg_handler = MessageHandler((filters.TEXT | filters.PHOTO) & (~filters.COMMAND), handle_message)
+    application.add_handler(msg_handler)
+    
+    print("--- JARVIS is Live! (Upgraded to GEMINI Brain) ---")
+    application.run_polling()
+    
