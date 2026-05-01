@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "uv run python main.py"
+startCommand = "python bot.py"
