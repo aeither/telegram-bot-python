@@ -1,44 +1,43 @@
+# -*- coding: utf-8 -*-
 import os
-import time
-import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Load environment variables
-load_dotenv()
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+name_map = {
+    "songbai": "94松白会所部长",
+    "honghua": "94红花会所部长",
+    "minsheng": "94民生会所部长",
+    "huafa": "94华发会所部长",
+    "tianyuan": "94田园会所部长",
+    "tianliao": "94田寮会所部长",
+    "jinyuwan": "94金御湾会所部长",
+    "kangle": "95-96康乐会所部长",
+    "gongming": "光明链接",
+    "jinyu": "金鱼",
+}
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = context.args[0] if context.args else None
+    user_id = update.effective_user.id
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+    if code and code in name_map:
+        chinese = name_map[code]
+        print(f"用户 {user_id} 通过 {code}（{chinese}）进入")
+        await update.message.reply_text(f"兄弟 已经转接：{chinese}")
+    elif code:
+        print(f"用户 {user_id} 通过 {code} 进入")
+        await update.message.reply_text(f"兄弟 已经转接：{code}")
+    else:
+        print(f"用户 {user_id} 直接开始")
+        await update.message.reply_text("欢迎！")
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    print("机器人已启动，按 Ctrl+C 停止")
+    app.run_polling()
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
-
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
-
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+if __name__ == "__main__":
+    main()
