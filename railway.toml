@@ -1,2 +1,184 @@
 [deploy]
 startCommand = "uv run python main.py"
+import telebot
+from telebot import types
+import json
+import os
+
+API_TOKEN = '8960267703:AAFdc1t16LXQibSMS82-qy4jAzwnPQuYatM'
+bot = telebot.TeleBot(API_TOKEN)
+ADMIN_CHAT_ID = 7457612833
+
+BALANCES_FILE = "balances.json"
+
+def load_balances():
+    if os.path.exists(BALANCES_FILE):
+        try:
+            with open(BALANCES_FILE, "r") as f:
+                return {int(k): v for k, v in json.load(f).items()}
+        except:
+            return {}
+    return {}
+
+def save_balances():
+    with open(BALANCES_FILE, "w") as f:
+        json.dump(user_balances, f)
+
+user_balances = load_balances()
+current_deals = {}
+
+PRODUCTS = {
+    "1": {"name": "WhatsApp Indian Number (OTP)", "price": 150},
+    "2": {"name": "WhatsApp US Number (+1)", "price": 250},
+    "3": {"name": "Pakistan number", "price": 150}
+}
+
+PAYMENT_METHOD = "Easypaisa: 03293891772: Muhammad zubair"
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    user_id = message.from_user.id
+    if user_id not in user_balances:
+        user_balances[user_id] = 0
+        save_balances()
+        
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn1 = types.KeyboardButton('🛒 Buy WhatsApp Accounts')
+    btn2 = types.KeyboardButton('💰 Check Balance')
+    btn3 = types.KeyboardButton('💳 Payment Methods')
+    btn4 = types.KeyboardButton('📞 Support / Admin')
+    markup.add(btn1, btn2, btn3, btn4)
+    bot.reply_to(message, "👋 Welcome! Buttons use karein.", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: True)
+def handle_messages(message):
+    user_id = message.from_user.id
+    if user_id not in user_balances: 
+        user_balances[user_id] = 0
+        save_balances()
+
+    if message.text == '🛒 Buy WhatsApp Accounts':
+        markup = types.InlineKeyboardMarkup()
+        for key, prod in PRODUCTS.items():
+            btn = types.InlineKeyboardButton(text=f"{prod['name']} - {prod['price']} PKR", callback_data=f"select_{key}")
+            markup.add(btn)
+        bot.send_message(message.chat.id, f"👇 Product select karein (Aapka Balance: {user_balances[user_id]} PKR):", reply_markup=markup)
+        
+    elif message.text == '💰 Check Balance':
+        bot.send_message(message.chat.id, f"💳 **Aapka Current Balance:** {user_balances[user_id]} PKR")
+        
+    elif message.text == '💳 Payment Methods':
+        bot.send_message(message.chat.id, f"💰 **Payment Details:**\n\n{PAYMENT_METHOD}\n\n📌 Account Number: 03293891772\n👉 Screenshot send karein.")
+        
+    elif message.text == '📞 Support / Admin':
+        bot.send_message(message.chat.id, "👨‍💻 Support ke liye contact karein @Fullhacke786786.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('select_'))
+def callback_select_product(call):
+    user_id = call.from_user.id
+    product_id = call.data.split('_')[1]
+    product = PRODUCTS.get(product_id)
+    
+    if product:
+        if user_balances.get(user_id, 0) >= product['price']:
+            current_deals[user_id] = {"product_name": product['name'], "price": product['price']}
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("📤 Send Number", callback_data=f"admin_sendnum_{user_id}"))
+            
+            admin_text = f"🔔 **Naya Number Order!**\n👤 User ID: `{user_id}`\n📦 Product: {product['name']}\n💵 Keemat: {product['price']} PKR\n\n👇 Niche button daba kar number dein:"
+            bot.send_message(ADMIN_CHAT_ID, admin_text, reply_markup=markup, parse_mode="Markdown")
+            bot.send_message(user_id, f"⏳ Aapka order Admin ke paas chala gaya hai. Wait karein...")
+        else:
+            bot.send_message(user_id, f"❌ Low Balance! Iski price {product['price']} PKR ہے۔")
+    bot.answer_callback_query(call.id)
+
+@bot.message_handler(content_types=['photo'])
+def handle_screenshot(message):
+    user_id = message.from_user.id
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("✅ Add 150 PKR", callback_data=f"add_150_{user_id}"),
+               types.InlineKeyboardButton("✅ Add 250 PKR", callback_data=f"add_250_{user_id}"),
+               types.InlineKeyboardButton("❌ Reject", callback_data=f"rej_bal_{user_id}"))
+    
+    admin_text = f"💰 **Balance Request!**\n👤 User ID: `{user_id}`\n\nVerify kar ke balance add karein:"
+    bot.send_photo(ADMIN_CHAT_ID, message.photo[-1].file_id, caption=admin_text, reply_markup=markup, parse_mode="Markdown")
+    bot.reply_to(message, "⏳ Screenshot Admin ko bhej diya gaya hai.")
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_all_callbacks(call):
+    data = call.data.split('_')
+    action = data[0]
+
+    if action == "add":
+        amount, target_user = int(data[1]), int(data[2])
+        if target_user not in user_balances: user_balances[target_user] = 0
+        user_balances[target_user] += amount
+        save_balances()
+        bot.send_message(target_user, f"🎉 Balance Loaded! Added {amount} PKR. Total: {user_balances[target_user]} PKR.")
+        bot.edit_message_caption(f"✅ Added {amount} PKR to {target_user}", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        
+    elif action == "rej" and data[1] == "bal":
+        target_user = int(data[2])
+        bot.send_message(target_user, "❌ Aapka screenshot reject kar diya gaya hai.")
+        bot.edit_message_caption("❌ Screenshot Rejected", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    elif action == "admin" and data[1] == "sendnum":
+        target_user = data[2]
+        msg = bot.send_message(ADMIN_CHAT_ID, f"✍️ Is user `{target_user}` ke liye Number likh kar send karein:")
+        bot.register_next_step_handler(msg, process_admin_number, target_user)
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    elif action == "user" and data[1] == "reqotp":
+        target_user = data[2]
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔑 Send OTP", callback_data=f"admin_sendotp_{target_user}"))
+        bot.send_message(ADMIN_CHAT_ID, f"📩 **ALERT!** User `{target_user}` OTP maang raha hai!", reply_markup=markup)
+        bot.edit_message_text("⏳ OTP Request Sent to Admin. Waiting...", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    elif action == "admin" and data[1] == "sendotp":
+        target_user = data[2]
+        msg = bot.send_message(ADMIN_CHAT_ID, f"✍️ User `{target_user}` ke liye OTP Code likh kar send karein:")
+        bot.register_next_step_handler(msg, process_admin_otp, target_user)
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+    elif action == "admin" and data[1] == "finish":
+        target_user = int(data[2])
+        if target_user in current_deals:
+            price = current_deals[target_user]["price"]
+            if user_balances.get(target_user, 0) >= price:
+                user_balances[target_user] -= price
+                save_balances()
+                bot.send_message(target_user, f"💰 **Deal Completed!** Remaining Balance: {user_balances[target_user]} PKR.")
+                bot.send_message(ADMIN_CHAT_ID, f"✅ Done! User `{target_user}` ka balance cut kar diya gaya hai.")
+            del current_deals[target_user]
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+    bot.answer_callback_query(call.id)
+
+def process_admin_number(message, target_user):
+    number_text = message.text
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("📩 Get OTP", callback_data=f"user_reqotp_{target_user}"))
+    bot.send_message(target_user, f"📱 **Aapka WhatsApp Number:** `{number_text}`\n\n👉 Niche **Get OTP** par click karein.", reply_markup=markup, parse_mode="Markdown")
+
+def process_admin_otp(message, target_user):
+    otp_text = message.text
+    bot.send_message(target_user, f"🔑 **Aapka WhatsApp OTP Code:** `{otp_text}`")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("💰 Cut Balance & Finish", callback_data=f"admin_finish_{target_user}"))
+    bot.send_message(ADMIN_CHAT_ID, f"📌 OTP bhej diya gaya hai. Balance Cut karein:", reply_markup=markup)
+
+from flask import Flask
+app = Flask('')
+@app.route('/')
+def home(): return "Bot is Alive!"
+
+import threading
+def run_db(): app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
+if __name__ == "__main__":
+    t = threading.Thread(target=run_db)
+    t.start()
+    print("Server and Bot Starting...")
+    bot.infinity_polling()
+    
