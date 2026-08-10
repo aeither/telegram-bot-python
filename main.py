@@ -14,14 +14,20 @@ try:
     register_commands(bot)
 
     @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+def send_welcome(message):
+    text = """🚀 DEX Volume Bot - Multi-Chain Elite Volume Booster
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+💎 Real Volume • Whale Attraction • Instant DEX Ranking
+
+🌐 Supported Chains:
+◎ Solana  •  Ξ Ethereum  •  ⬡ BNB Chain  •  🔷 Base  •  💎 TON
+
+🎯 Why Whales Choose Volume-Rich Tokens:
+• Trending tokens get premium attention from big Banks
+• Consistent activity signals project legitimacy
+• DEX algorithms favor high-volume tokens in recommendations"""
+
+    bot.send_message(message.chat.id, text)
 
     @bot.message_handler(func=lambda msg: True)
     def echo_all(message):
