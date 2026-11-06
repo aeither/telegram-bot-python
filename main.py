@@ -1,44 +1,35 @@
 import os
-import time
 import telebot
-from dotenv import load_dotenv
-from commands import register_commands
+import google.generativeai as genai
 
-# Load environment variables
-load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
-# Replace 'TELEGRAM_BOT_TOKEN' with the token you received from BotFather
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-try:
-    bot = telebot.TeleBot(TOKEN)
-    register_commands(bot)
+genai.configure(api_key=GEMINI_KEY)
+generation_config = {
+    "temperature": 0.7,
+}
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    generation_config=generation_config,
+    system_instruction="Eres Mechi (MHY), una compañera e inteligencia artificial directa, sincera y muy cercana. Respondes de forma clara, sin rodeos y con un tono amigable pero honesto."
+)
 
-    @bot.message_handler(commands=['start', 'hello'])
-    def send_welcome(message):
-        """
-        Handle '/start' and '/hello' commands.
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, "Hello! I'm a simple Telegram bot.")
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.reply_to(message, "¡Hola! Soy Mechi. Estoy lista para conversar contigo, directa y sin rodeos.")
 
-    @bot.message_handler(func=lambda msg: True)
-    def echo_all(message):
-        """
-        Echo all incoming text messages back to the user.
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    try:
+        response = model.generate_content(message.text)
+        bot.reply_to(message, response.text)
+    except Exception as e:
+        bot.reply_to(message, f"Ocurrió un error al procesar tu mensaje: {e}")
 
-        Args:
-            message (telebot.types.Message): The message object.
-        """
-        bot.reply_to(message, message.text)
-
-    # Remove webhook to avoid conflicts with polling
-    bot.delete_webhook(drop_pending_updates=True)
-    bot.polling()
-
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to initialize bot with provided token. Error: {e}")
-    print("The application will hang to prevent a restart loop. Please fix the TELEGRAM_BOT_TOKEN environment variable.")
-    while True:
-        time.sleep(3600)
+if __name__ == "__main__":
+    print("Mechi está en línea...")
+    bot.infinity_polling()
+    
